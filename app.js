@@ -3,6 +3,8 @@ var express = require('express');
 var path = require('path');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
+const session = require('express-session');
+const FileStore = require('session-file-store')(session);
 const mongoose = require('mongoose');
 
 var indexRouter = require('./routes/index');
@@ -14,7 +16,11 @@ var leaderRouter = require('./routes/leaderRouter');
 const Dishes = require('./models/dishes');
 
 const url = 'mongodb://localhost:27017/conFusion';
-const connect = mongoose.connect(url);
+const connect = mongoose.connect(url, {
+    useCreateIndex: true,
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+});
 
 connect.then((db) => {
   console.log('Connected correctly to server')
@@ -26,14 +32,46 @@ var app = express();
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'jade');
 
+//middlewares
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(session({
+  name: 'session-id',
+  secret: '12345-67890-09876-54321',
+  saveUninitialized: false,
+  resave: false,
+  store: new FileStore()
+}));
 
+//pre-auth routes mounted
 app.use('/', indexRouter);
 app.use('/users', usersRouter);
+
+//authentication
+function auth (req, res, next) {
+    console.log(req.session);
+
+  if(!req.session.user) {
+      var err = new Error('You are not authenticated!');
+      err.status = 403;
+      return next(err);
+  }
+  else {
+    if (req.session.user === 'authenticated') {
+      next();
+    }
+    else {
+      var err = new Error('You are not authenticated!');
+      err.status = 403;
+      return next(err);
+    }
+  }
+}
+
+app.use(auth)
+app.use(express.static(path.join(__dirname, 'public')));
+
 app.use('/dishes', dishRouter);
 app.use('/promotions', promoRouter);
 app.use('/leaders', leaderRouter);
